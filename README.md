@@ -41,3 +41,20 @@ curl "http://localhost:8000/check?url=https://google.com"
 - [ ] **Level 3: State & Scheduling** - PostgreSQL integration, background tasks worker, periodic service uptime checks history.
 
 - [ ] **Level 4: Observability Stack** - Prometheus metrics export, Grafana dashboard visualization, application logging structure.
+
+## Design Decisions: Infrastructure & Security (Level 2)
+
+### 1. Reverse Proxy & Network Isolation
+* **Decision:** The FastAPI application is completely isolated from the host network. The `ports` directive is removed from the `app` service in `docker-compose.yml`.
+* **Rationale:** Security best practice. Only the Nginx container exposes port `80` to the outside world. All traffic to the application must pass through the proxy, eliminating direct scanning or bypassing of security controls.
+
+### 2. Rate Limiting Configuration
+* **Configuration:** `rate=5r/s`, `burst=3 nodelay`, `status=429`.
+* **Rationale:** 
+  * `rate=5r/s`: Protects the application threads from being overwhelmed by automated brute-force checking or DDoS loops.
+  * `burst=3 nodelay`: Allows legitimate clients to execute a burst of up to 3 concurrent requests (e.g., when a dashboard UI requests status for multiple endpoints at once) without artificial latency (`nodelay`), but tightly drops any excessive spam.
+  * `status=429`: Provides standard, semantically correct HTTP telemetry (`Too Many Requests`) instead of generic server errors (`503`).
+
+### 3. Proxy Timeouts
+* **Configuration:** `proxy_connect_timeout 3s;`, `proxy_read_timeout 3s;`.
+* **Rationale:** If the internal Python application hangs or deadlocks due to an unhandled upstream network event, Nginx will wait no longer than 3 seconds before severing the connection and releasing worker threads. This prevents cascading failures across the proxy layer.

@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: uptime-app
+    networks:
+      - uptime-network
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: uptime-proxy
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app
+    networks:
+      - uptime-network
+
+networks:
+  uptime-network:
+    driver: bridge

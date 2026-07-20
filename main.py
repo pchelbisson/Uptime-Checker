@@ -1,7 +1,7 @@
 import sys
 import socket
 import time
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 import httpx
 
 app = FastAPI()
@@ -16,12 +16,13 @@ def read_health():
 
 
 @app.get("/info")
-def read_info():
+def read_info(request: Request):
     current_uptime = time.time() - START_TIME
     return {
         "hostname": socket.gethostname(),
         "python_version": sys.version,
         "uptime_seconds": int(current_uptime),
+        "headers": dict(request.headers),
     }
 
 

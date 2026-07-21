@@ -10,7 +10,7 @@ http {
 
     access_log /var/log/nginx/access.log custom_format;
 
-    limit_req_zone $binary_remote_addr zone=check_limit:10m rate=5r/s;
+    limit_req_zone $binary_remote_addr zone=check_limit:10m rate=${RATE_LIMIT_RPS};
 
     proxy_connect_timeout 3s;
     proxy_read_timeout 3s;
@@ -23,13 +23,13 @@ http {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
         location /check {
-            limit_req zone=check_limit burst=3 nodelay;
+            limit_req zone=check_limit burst=${RATE_LIMIT_BURST} nodelay;
             limit_req_status 429;
-            proxy_pass http://app:8000;
+            proxy_pass http://app:${APP_PORT};
         }
 
         location / {
-            proxy_pass http://app:8000;
+            proxy_pass http://app:${APP_PORT};
         }
     }
 }

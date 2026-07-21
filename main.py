@@ -9,7 +9,6 @@ app = FastAPI()
 
 START_TIME = time.time()
 
-
 @app.get("/health")
 def read_health():
     return {"status": "ok"}

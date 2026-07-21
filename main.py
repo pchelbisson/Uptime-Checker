@@ -3,11 +3,21 @@ import socket
 import time
 from fastapi import FastAPI, Request
 import httpx
+import psycopg
+import os
 
 app = FastAPI()
 
+DB_USER = os.getenv("POSTGRES_USER")
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+DB_NAME = os.getenv("POSTGRES_DB")
+DB_HOST = os.getenv("DB_HOST", "db")
+DB_PORT = os.getenv("DB_PORT", "5432")
+
+DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 START_TIME = time.time()
+
 
 @app.get("/health")
 def read_health():
@@ -40,3 +50,14 @@ def check_url(url: str):
         }
     except (httpx.HTTPError, httpx.InvalidURL):
         return {"url": url, "status_code": 0, "response_time_ms": 0, "is_up": False}
+
+
+@app.get("/db-check")
+def check_db():
+    try:
+        with psycopg.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                return {"db_connected": True}
+    except psycopg.Error as e:
+        return {"db_connected": False, "error": str(e)}

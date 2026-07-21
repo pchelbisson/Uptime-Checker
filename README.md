@@ -68,5 +68,8 @@ curl "http://localhost:8000/check?url=https://google.com"
 
 ### 4. Database Persistence via Named Volume (Level 3)
 * **Configuration:** `postgres_data:/var/lib/postgresql/data` (Docker Named Volume instead of a Bind Mount).
-
 * **Rationale:** PostgreSQL requires strict POSIX file permissions (`chmod 700`, owner `postgres`) and high I/O throughput. Named Volumes are managed natively inside the Docker VM's Linux filesystem (ext4), bypassing the slow cross-OS filesystem translation layer (9p/virtiofs in WSL2) and eliminating FATAL: data directory has wrong ownership permission issues common with bind mounts on Windows hosts.
+
+### 5. Advanced Database Healthcheck via `pg_isready`
+* **Configuration:** `test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]`
+* **Rationale:** Relying on a basic TCP-ping for port `5432` introduces a race condition; PostgreSQL binds to its socket and opens the port at the very start of its bootstrap phase—long before it finishes reading configs, initializing memory, or replaying WAL logs. A TCP check would report success prematurely, causing the application container to attempt a connection and crash with an authentication error. The native `pg_isready` utility performs a lightweight application-level handshake with the database server and returns an exit code of 0 only when the Postgres instance is fully operational and capable of executing SQL queries.

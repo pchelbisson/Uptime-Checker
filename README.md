@@ -65,3 +65,8 @@ curl "http://localhost:8000/check?url=https://google.com"
   * Establishes a single source of truth for ports and rate-limiting across both Docker Compose orchestration and Nginx proxy configs.
   * Explicitly restricts `envsubst` to specified custom variables (`$RATE_LIMIT_RPS`, `$RATE_LIMIT_BURST`, `$APP_PORT`), avoiding corruption of Nginx internal directives (`$host`, `$remote_addr`).
   * Bypasses implicit Docker entrypoint script quirks, ensuring robust, deterministic configuration rendering at startup.
+
+### 4. Database Persistence via Named Volume (Level 3)
+* **Configuration:** `postgres_data:/var/lib/postgresql/data` (Docker Named Volume instead of a Bind Mount).
+
+* **Rationale:** PostgreSQL requires strict POSIX file permissions (`chmod 700`, owner `postgres`) and high I/O throughput. Named Volumes are managed natively inside the Docker VM's Linux filesystem (ext4), bypassing the slow cross-OS filesystem translation layer (9p/virtiofs in WSL2) and eliminating FATAL: data directory has wrong ownership permission issues common with bind mounts on Windows hosts.

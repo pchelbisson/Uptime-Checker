@@ -23,6 +23,19 @@ services:
     networks:
       - uptime-network
 
+  db:
+    image: postgres:16-alpine
+    container_name: uptime-db
+    env_file:
+      - .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - uptime-network
+
+volumes:
+  postgres_data:
+
 networks:
   uptime-network:
     driver: bridge

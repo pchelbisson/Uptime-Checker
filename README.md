@@ -13,34 +13,42 @@ A minimal uptime-checker API built as a hands-on learning project to master prof
 * `GET /health` — Simple health check endpoint (returns `{"status": "ok"}`).
 * `GET /info` — Container metadata (returns runtime process uptime, python version, and internal container `hostname`).
 * `GET /check?url=<url>` — Performs a synchronous HTTP request to the target URL, measures response time in milliseconds, and handles connection/DNS errors gracefully without dropping the application.
+* `GET /db-check` — Verifies connectivity to the PostgreSQL database (returns `{"db_connected": true}` or `false` with an error message).
+* `GET /history?url=<url>&limit=<n>` — Returns the most recent uptime checks for a given URL, ordered by most recent first (default `limit=20`).
 
 ---
 
 ## Quick Start
 
-To build and run the application inside the secure container locally, execute:
+To start the entire infrastructure stack (FastAPI App, PostgreSQL Database, and Nginx Reverse Proxy) using Docker Compose:
 
-```bash
-# 1. Build the multi-stage image
-docker build -t uptime-checker .
+1. **Configure Environment Variables:**
+   
+  ```bash
+  # Copy the example configuration file and adjust variables if needed:
+  cp .env.example .env
 
-# 2. Run the container in interactive mode (ports mapped to 8000)
-docker run -p 8000:8000 uptime-checker
+  # Build and Run Containers:
+  docker compose up -d --build
 
-# Once started, test it via curl:
-curl "http://localhost:8000/check?url=https://google.com"
-```
+  # Verify API Endpoints:
+  curl http://localhost/db-check
+  curl "http://localhost/check?url=https://google.com"
+  curl "http://localhost/history?url=https://google.com&limit=5"
+  ```
 ---
 
 ## Project Roadmap
 
 - [x] **Level 1: Containerization Basics** - Single container setup, multi-stage build optimization, non-root user execution, layer trimming.
 
-- [x] **Level 2: Orchestration & Networking** - Docker Compose environment, multiple replicas, Nginx reverse-proxy and load balancing.
+- [x] **Level 2: Orchestration & Networking** - Docker Compose environment, Nginx reverse-proxy, rate limiting, and environment-based configuration.
 
-- [ ] **Level 3: State & Scheduling** - PostgreSQL integration, background tasks worker, periodic service uptime checks history.
+- [x] **Level 3: State & Scheduling** - PostgreSQL integration, background tasks worker, periodic service uptime checks history.
 
-- [ ] **Level 4: Observability Stack** - Prometheus metrics export, Grafana dashboard visualization, application logging structure.
+- [ ] **Level 4: Optimization and Supply Chain Hygiene** - Multi-stage image optimization, Vulnerability scanning with Trivy in CI
+
+- [ ] **Level 5: Observability Stack** - Prometheus metrics export, Grafana dashboard visualization, application logging structure.
 
 ## Design Decisions: Infrastructure & Security
 
@@ -87,3 +95,7 @@ curl "http://localhost:8000/check?url=https://google.com"
   * **Strict Twelve-Factor Alignment:** Storing the target list in `.env` adheres directly to the principle of keeping configuration strictly isolated from the application code and disk state.
   * **Zero-Volume Overhead:** Using a variable eliminates the need to configure, manage, and maintain additional Docker bind mounts or file volumes for the application container. This minimizes infrastructure footprint and removes potential cross-platform file permission bugs between host systems and runtime containers.
   * **Trivial Application Parsing:** Python handles comma-separated string parsing natively using standard string manipulation `(os.getenv("MONITORED_URLS", "").split(","))` or native `Pydantic` validation.
+
+### 8. Choosing a base image (Alpine vs. Slim) (Level 4)
+* **Chosen Approach:** Switching both build and runtime stages to `python:3.12-alpine`.
+* **Rationale:** Rebuilt an equivalent slim-based image with identical dependencies (psycopg[binary], apscheduler, fastapi, httpx) for a fair comparison: 293MB (slim) vs 189MB (alpine) — a genuine 104MB (-35.5%) reduction. `psycopg[binary]` installs cleanly on Alpine without requiring gcc/musl-dev, since PyPI provides pre-built musllinux wheels.

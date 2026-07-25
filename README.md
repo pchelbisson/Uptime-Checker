@@ -1,3 +1,5 @@
+[![Security Scan (Trivy)](https://github.com/pchelbisson/Uptime-Checker/actions/workflows/docker-scan.yml/badge.svg)](https://github.com/pchelbisson/Uptime-Checker/actions/workflows/docker-scan.yml/badge.svg?branch=main)
+
 # Uptime Checker API
 
 A minimal uptime-checker API built as a hands-on learning project to master professional Docker, container orchestration, and observability practices. The project follows an evolutionary path — going from a single isolated container to a complete production-like stack.
@@ -99,3 +101,7 @@ To start the entire infrastructure stack (FastAPI App, PostgreSQL Database, and 
 ### 8. Choosing a base image (Alpine vs. Slim) (Level 4)
 * **Chosen Approach:** Switching both build and runtime stages to `python:3.12-alpine`.
 * **Rationale:** Rebuilt an equivalent slim-based image with identical dependencies (psycopg[binary], apscheduler, fastapi, httpx) for a fair comparison: 293MB (slim) vs 189MB (alpine) — a genuine 104MB (-35.5%) reduction. `psycopg[binary]` installs cleanly on Alpine without requiring gcc/musl-dev, since PyPI provides pre-built musllinux wheels.
+
+### 9. Security Scanning with Trivy (Level 4)
+* **Chosen Approach:** Dependencies are pinned to specific versions (`==`) to ensure build reproducibility.
+* **Rationale:** Detecting new vulnerabilities is a CI task rather than a pinning task: `Trivy` scans the image on every push, and if a `HIGH` or `CRITICAL` vulnerability is found, the developer explicitly updates the specific version (via a code review, not automatically) and then locks in the new exact pin. This ensures the resulting image is always predictable, and updates are deliberate rather than a side effect of an accidental rebuild.

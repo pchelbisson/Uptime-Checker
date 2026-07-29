@@ -105,3 +105,7 @@ To start the entire infrastructure stack (FastAPI App, PostgreSQL Database, and 
 ### 9. Security Scanning with Trivy (Level 4)
 * **Chosen Approach:** Dependencies are pinned to specific versions (`==`) to ensure build reproducibility.
 * **Rationale:** Detecting new vulnerabilities is a CI task rather than a pinning task: `Trivy` scans the image on every push, and if a `HIGH` or `CRITICAL` vulnerability is found, the developer explicitly updates the specific version (via a code review, not automatically) and then locks in the new exact pin. This ensures the resulting image is always predictable, and updates are deliberate rather than a side effect of an accidental rebuild.
+
+### 10. Metrics Exposure & Access (Level 5)
+* **Decision:** Prometheus UI bound to `127.0.0.1:9090` only (local debugging), not exposed publicly. `/metrics` on the app is proxied through nginx without authentication.
+* **Rationale:** For this project's scope, `/metrics` exposes only aggregate counters (check counts, response times) - no sensitive data. In a real production setup, this endpoint would sit behind basic auth or network policy restricting access to the monitoring subnet only.

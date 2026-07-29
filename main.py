@@ -2,13 +2,16 @@ from datetime import datetime
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED, EVENT_JOB_EXECUTED
 from apscheduler.schedulers.background import BackgroundScheduler
 from contextlib import asynccontextmanager
+from prometheus_client import Counter, Gauge, make_asgi_app
+from fastapi import FastAPI, Request
 import sys
 import socket
 import time
-from fastapi import FastAPI, Request
 import httpx
 import psycopg
 import os
+
+metrics_app = make_asgi_app()
 
 DB_USER = os.getenv("POSTGRES_USER")
 DB_PASSWORD = os.getenv("POSTGRES_PASSWORD")
@@ -24,6 +27,18 @@ MONITORED_URLS = [
 
 
 START_TIME = time.time()
+
+CHECKS_TOTAL = Counter(
+    "uptime_checks_total", "Total number of uptime checks completed", ["url"]
+)
+CHECKS_FAILED = Counter(
+    "uptime_checks_failed_total", "Total number of failed uptime checks", ["url"]
+)
+RESPONSE_TIME = Gauge(
+    "uptime_check_response_time_ms",
+    "Response time of the last check in milliseconds",
+    ["url"],
+)
 
 
 def init_db():
@@ -64,6 +79,13 @@ def monitor_task():
                             elapsed_ms = 0
                             status_code = 0
                             is_up = False
+
+                        CHECKS_TOTAL.labels(url=url).inc()
+
+                        if not is_up:
+                            CHECKS_FAILED.labels(url=url).inc()
+
+                        RESPONSE_TIME.labels(url=url).set(elapsed_ms)
 
                         cur.execute(
                             """
@@ -113,6 +135,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.mount("/metrics", metrics_app)
 
 
 @app.get("/health")
@@ -190,7 +213,12 @@ def get_history(url: str, limit: int = 20):
                         }
                     )
 
-                return {"success": True, "url": url, "count": len(history), "history": history}
+                return {
+                    "success": True,
+                    "url": url,
+                    "count": len(history),
+                    "history": history,
+                }
 
     except psycopg.Error as e:
         return {"success": False, "error": str(e)}

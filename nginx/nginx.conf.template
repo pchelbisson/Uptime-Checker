@@ -28,6 +28,12 @@ http {
             proxy_pass http://app:${APP_PORT};
         }
 
+        location /metrics {
+            proxy_pass http://app:${APP_PORT}/metrics/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
         location / {
             proxy_pass http://app:${APP_PORT};
         }

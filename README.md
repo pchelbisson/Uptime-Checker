@@ -1,12 +1,20 @@
 [![Security Scan (Trivy)](https://github.com/pchelbisson/Uptime-Checker/actions/workflows/docker-scan.yml/badge.svg)](https://github.com/pchelbisson/Uptime-Checker/actions/workflows/docker-scan.yml/badge.svg?branch=main)
 
+![Project architecture](docs/images/uptime_checker_architecture.svg)
+
 # Uptime Checker API
 
 A minimal uptime-checker API built as a hands-on learning project to master professional Docker, container orchestration, and observability practices. The project follows an evolutionary path — going from a single isolated container to a complete production-like stack.
 
 ## Current Architecture Status
-* **Backend:** FastAPI, HTTPX (resilient network exception handling)
-* **Docker Best Practices:** Multi-stage builds (`python:3.12-slim`), `non-root` user security execution, build context optimization via `.dockerignore`.
+
+* **Backend:** FastAPI, HTTPX (resilient network exception handling, custom Prometheus metrics).
+* **Reverse Proxy:** Nginx (traffic routing, rate limiting, SSL/security headers ready).
+* **Database & Cache:** PostgreSQL (persistent storage for health check history).
+* **Monitoring & Observability:** Prometheus (scraping `/metrics`), Grafana v11 (auto-provisioned dashboards & datasources).
+* **Infrastructure & Containerization:** 
+  * Docker Compose (multi-container orchestration, custom bridge network `uptime-network`).
+  * Docker Best Practices: Multi-stage builds (`python:3.12-alpine`), non-root security execution (`appuser`), pinned base images, `.dockerignore` context optimization.
 
 ---
 
@@ -17,12 +25,13 @@ A minimal uptime-checker API built as a hands-on learning project to master prof
 * `GET /check?url=<url>` — Performs a synchronous HTTP request to the target URL, measures response time in milliseconds, and handles connection/DNS errors gracefully without dropping the application.
 * `GET /db-check` — Verifies connectivity to the PostgreSQL database (returns `{"db_connected": true}` or `false` with an error message).
 * `GET /history?url=<url>&limit=<n>` — Returns the most recent uptime checks for a given URL, ordered by most recent first (default `limit=20`).
+* `GET /metrics` — Prometheus endpoint with check execution metrics (request count, latency, errors).
 
 ---
 
 ## Quick Start
 
-To start the entire infrastructure stack (FastAPI App, PostgreSQL Database, and Nginx Reverse Proxy) using Docker Compose:
+To start the entire infrastructure stack (FastAPI App, PostgreSQL, Nginx, Prometheus, Grafana) using Docker Compose:
 
 1. **Configure Environment Variables:**
    
@@ -37,6 +46,9 @@ To start the entire infrastructure stack (FastAPI App, PostgreSQL Database, and 
   curl http://localhost/db-check
   curl "http://localhost/check?url=https://google.com"
   curl "http://localhost/history?url=https://google.com&limit=5"
+  curl http://localhost/metrics
+  # Grafana dashboards: http://127.0.0.1:3000 (admin credentials from .env)
+  # Prometheus UI: http://127.0.0.1:9090
   ```
 ---
 
@@ -48,9 +60,9 @@ To start the entire infrastructure stack (FastAPI App, PostgreSQL Database, and 
 
 - [x] **Level 3: State & Scheduling** - PostgreSQL integration, background tasks worker, periodic service uptime checks history.
 
-- [ ] **Level 4: Optimization and Supply Chain Hygiene** - Multi-stage image optimization, Vulnerability scanning with Trivy in CI
+- [x] **Level 4: Optimization and Supply Chain Hygiene** - Multi-stage image optimization, Vulnerability scanning with Trivy in CI
 
-- [ ] **Level 5: Observability Stack** - Prometheus metrics export, Grafana dashboard visualization, application logging structure.
+- [x] **Level 5: Observability Stack** - Prometheus metrics export, Grafana dashboard visualization, application logging structure.
 
 ## Design Decisions: Infrastructure & Security
 
@@ -76,36 +88,36 @@ To start the entire infrastructure stack (FastAPI App, PostgreSQL Database, and 
   * Explicitly restricts `envsubst` to specified custom variables (`$RATE_LIMIT_RPS`, `$RATE_LIMIT_BURST`, `$APP_PORT`), avoiding corruption of Nginx internal directives (`$host`, `$remote_addr`).
   * Bypasses implicit Docker entrypoint script quirks, ensuring robust, deterministic configuration rendering at startup.
 
-### 4. Database Persistence via Named Volume (Level 3)
+### 5. Database Persistence via Named Volume (Level 3)
 * **Configuration:** `postgres_data:/var/lib/postgresql/data` (Docker Named Volume instead of a Bind Mount).
 * **Rationale:** PostgreSQL requires strict POSIX file permissions (`chmod 700`, owner `postgres`) and high I/O throughput. Named Volumes are managed natively inside the Docker VM's Linux filesystem (ext4), bypassing the slow cross-OS filesystem translation layer (9p/virtiofs in WSL2) and eliminating FATAL: data directory has wrong ownership permission issues common with bind mounts on Windows hosts.
 
-### 5. Advanced Database Healthcheck via `pg_isready` (Level 3)
+### 6. Advanced Database Healthcheck via `pg_isready` (Level 3)
 * **Configuration:** `test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]`
 * **Rationale:** Relying on a basic TCP-ping for port `5432` introduces a race condition; PostgreSQL binds to its socket and opens the port at the very start of its bootstrap phase—long before it finishes reading configs, initializing memory, or replaying WAL logs. A TCP check would report success prematurely, causing the application container to attempt a connection and crash with an authentication error. The native `pg_isready` utility performs a lightweight application-level handshake with the database server and returns an exit code of 0 only when the Postgres instance is fully operational and capable of executing SQL queries.
 
-### 6. Database Initialization: Application Code vs. Docker Init Scripts (Level 3)
+### 7. Database Initialization: Application Code vs. Docker Init Scripts (Level 3)
 * **Chosen Approach:** Application-driven schema creation via SQL executing on FastAPI startup `(CREATE TABLE IF NOT EXISTS)`.
 * **Rationale:** 
   * **Lifecycle Flexibility:** Scripts placed inside `/docker-entrypoint-initdb.d/` run only once—when the PostgreSQL container volume is entirely empty.
   * **Application Autonomy:** Executing `CREATE TABLE IF NOT EXISTS` within the FastAPI `lifespan` ensures that the application remains self-contained and environment-agnostic.
   * **Bridge to Migration Frameworks:** Handling initialization inside Python establishes the exact architectural pattern required for professional production workflows. 
 
-### 7. Target URL Configuration: Environment Variables vs. Mounted Files (Level 3)
+### 8. Target URL Configuration: Environment Variables vs. Mounted Files (Level 3)
 * **Chosen Approach:** Single environment variable string split via comma `(MONITORED_URLS)` inside the `.env` file.
 * **Rationale:**
   * **Strict Twelve-Factor Alignment:** Storing the target list in `.env` adheres directly to the principle of keeping configuration strictly isolated from the application code and disk state.
   * **Zero-Volume Overhead:** Using a variable eliminates the need to configure, manage, and maintain additional Docker bind mounts or file volumes for the application container. This minimizes infrastructure footprint and removes potential cross-platform file permission bugs between host systems and runtime containers.
   * **Trivial Application Parsing:** Python handles comma-separated string parsing natively using standard string manipulation `(os.getenv("MONITORED_URLS", "").split(","))` or native `Pydantic` validation.
 
-### 8. Choosing a base image (Alpine vs. Slim) (Level 4)
+### 9. Choosing a base image (Alpine vs. Slim) (Level 4)
 * **Chosen Approach:** Switching both build and runtime stages to `python:3.12-alpine`.
 * **Rationale:** Rebuilt an equivalent slim-based image with identical dependencies (psycopg[binary], apscheduler, fastapi, httpx) for a fair comparison: 293MB (slim) vs 189MB (alpine) — a genuine 104MB (-35.5%) reduction. `psycopg[binary]` installs cleanly on Alpine without requiring gcc/musl-dev, since PyPI provides pre-built musllinux wheels.
 
-### 9. Security Scanning with Trivy (Level 4)
+### 10. Security Scanning with Trivy (Level 4)
 * **Chosen Approach:** Dependencies are pinned to specific versions (`==`) to ensure build reproducibility.
 * **Rationale:** Detecting new vulnerabilities is a CI task rather than a pinning task: `Trivy` scans the image on every push, and if a `HIGH` or `CRITICAL` vulnerability is found, the developer explicitly updates the specific version (via a code review, not automatically) and then locks in the new exact pin. This ensures the resulting image is always predictable, and updates are deliberate rather than a side effect of an accidental rebuild.
 
-### 10. Metrics Exposure & Access (Level 5)
+### 11. Metrics Exposure & Access (Level 5)
 * **Decision:** Prometheus UI bound to `127.0.0.1:9090` only (local debugging), not exposed publicly. `/metrics` on the app is proxied through nginx without authentication.
 * **Rationale:** For this project's scope, `/metrics` exposes only aggregate counters (check counts, response times) - no sensitive data. In a real production setup, this endpoint would sit behind basic auth or network policy restricting access to the monitoring subnet only.
